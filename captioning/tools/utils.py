@@ -102,19 +102,93 @@ def decode_output(predicted_output, ref_captions, file_names,
     for pred_cap, gt_caps, f_name in zip(predicted_output, ref_captions, file_names):
 
         f_names.append(f_name)
-        captions_pred.append({'file_name': f_name, 'caption_predicted': pred_cap})
+        #captions_pred.append({'file_name': f_name, 'caption_predicted': pred_cap})
+        captions_pred.append(pred_cap)
         ref_caps_dict = {'file_name': f_name}
-        for i, cap in enumerate(gt_caps):
-            ref_caps_dict[f"caption_{i + 1}"] = cap
-        captions_gt.append(ref_caps_dict)
-
-        log_strings = [f'Captions for file {f_name}:',
+        log_strings = ""
+        if isinstance(gt_caps, list):
+            # for i, cap in enumerate(gt_caps):
+            #     ref_caps_dict[f"caption_{i + 1}"] = cap
+            # captions_gt.append(ref_caps_dict)
+            captions_gt.append(gt_caps)
+            log_strings = [f'Captions for file {f_name}:',
                        f'\t Predicted caption: {pred_cap}',
                        f'\t Original caption_1: {gt_caps[0]}',
                        f'\t Original caption_2: {gt_caps[1]}',
                        f'\t Original caption_3: {gt_caps[2]}',
                        f'\t Original caption_4: {gt_caps[3]}',
                        f'\t Original caption_5: {gt_caps[4]}']
+        else:
+            # ref_caps_dict["caption_1"] = gt_caps
+            # captions_gt.append(ref_caps_dict)
+            captions_gt.append([gt_caps])
+            log_strings = [f'Captions for file {f_name}:',
+                       f'\t Predicted caption: {pred_cap}',
+                       f'\t Original caption_1: {gt_caps}']
+        #cap = ''
+        # if isinstance(gt_caps, list):
+        #     cap = gt_caps[0]
+        # else:
+        #     cap = gt_caps
+        #ref_caps_dict["caption_1"] = cap
+        #captions_gt.append(ref_caps_dict)
+        #captions_gt.append([cap])
+        #print(f"gt_caps: {gt_caps}")
+        # log_strings = [f'Captions for file {f_name}:',
+        #             f'\t Predicted caption: {pred_cap}',
+        #             f'\t Original caption_1: {cap}']
+        #             # f'\t Original caption_2: {gt_caps[1]}',
+        #             # f'\t Original caption_3: {gt_caps[2]}',
+        #             # f'\t Original caption_4: {gt_caps[3]}',
+        #             # f'\t Original caption_5: {gt_caps[4]}']
+
+        [caption_logger.info(log_string)
+         for log_string in log_strings]
+    logger.remove(logging)
+    return captions_pred, captions_gt
+    
+
+def decode_output_coco(predicted_output, ref_captions, file_names,
+                  log_output_dir, epoch, beam_size=1):
+
+    if beam_size != 1:
+        logging = logger.add(str(log_output_dir) + '/coco_beam_captions_{}ep_{}bsize.txt'.format(epoch, beam_size),
+                             format='{message}', level='INFO',
+                             filter=lambda record: record['extra']['indent'] == 3)
+        caption_logger = logger.bind(indent=3)
+        caption_logger.info('Captions start')
+        caption_logger.info('Beam search:')
+    else:
+        logging = logger.add(str(log_output_dir) + '/coco_captions_{}ep.txt'.format(epoch),
+                             format='{message}', level='INFO',
+                             filter=lambda record: record['extra']['indent'] == 2)
+        caption_logger = logger.bind(indent=2)
+        caption_logger.info('Captions start')
+        caption_logger.info('Greedy search:')
+
+    captions_pred, captions_gt, f_names = [], [], []
+
+    for pred_cap, gt_caps, f_name in zip(predicted_output, ref_captions, file_names):
+
+        f_names.append(f_name)
+        captions_pred.append({'file_name': f_name, 'caption_predicted': pred_cap})
+        ref_caps_dict = {'file_name': f_name}
+        log_strings = ""
+        if isinstance(gt_caps, list):
+            for i, cap in enumerate(gt_caps):
+                ref_caps_dict[f"caption_{i + 1}"] = cap
+            captions_gt.append(ref_caps_dict)
+    
+            log_strings = [f'Captions for file {f_name}:',
+                           f'\t Predicted caption: {pred_cap}',
+                           f'\t Original caption_1: {gt_caps[0]}',
+                           f'\t Original caption_2: {gt_caps[1]}',
+                           f'\t Original caption_3: {gt_caps[2]}',
+                           f'\t Original caption_4: {gt_caps[3]}',
+                           f'\t Original caption_5: {gt_caps[4]}']
+        else:
+            ref_caps_dict[f"caption_1"] = gt_caps
+            captions_gt.append(ref_caps_dict)
 
         [caption_logger.info(log_string)
          for log_string in log_strings]

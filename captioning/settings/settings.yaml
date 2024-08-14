@@ -3,6 +3,9 @@ device: "cuda"
 pretrain: false
 pretrain_path: "outputs/pretrain/all_data/HTSAT_BART_lr_5e-05_seed_20/models/ac_best_model.pt"
 seed: 20
+json_files: ["data/AudioCaps/json_files/train.json", "data/Clotho/json_files/train.json", "data/MoCa/json_files/mood_addon_train.json"]
+blacklist: "data/json_files/blacklist/blacklist_exclude_test_ac.json"
+
 
 
 audio_args:
@@ -12,7 +15,7 @@ audio_args:
   f_min: 50
   f_max: 14000
   n_mels: 64
-  max_length: 0 # set to 10 for HTSAT encoder, and set to 0 or 30 for CNN encoder
+  max_length: 10 # set to 10 for HTSAT encoder, and set to 0 or 30 for CNN encoder
   mono: True
 
 
@@ -55,7 +58,7 @@ text_decoder_args:
 
 optim_args:
   scheduler: cosine
-  lr: !!float 1e-4
+  lr: !!float 5e-6
   warmup_steps: 6400
   optimizer_name: "adam"
   betas: [0.9, 0.999]

@@ -36,14 +36,18 @@ class AudioCaptionDataset(Dataset):
         with open(json_path, 'r') as f:
             json_obj = json.load(f)["data"]
 
-        if self.dataset == "AudioCaps" and split == "train":
-            self.num_captions_per_audio = 1
-            self.captions = [item["caption"] for item in json_obj]
-            self.wav_paths = [item["audio"] for item in json_obj]
-        elif split == "train":
+        if self.dataset == "Clotho" and split == "train":
             self.num_captions_per_audio = 5
             self.captions = [item["caption_{}".format(i)] for item in json_obj for i in range(1, 6)]
             self.wav_paths = [item["audio"] for item in json_obj for _ in range(1, 6)]
+        elif self.dataset == "AudioCaps":
+            self.num_captions_per_audio = 1
+            self.captions = [item["caption"] for item in json_obj]
+            self.wav_paths = [item["audio"] for item in json_obj]
+        elif self.dataset == "MoCa":
+            self.num_captions_per_audio = 1
+            self.captions = [item["caption"] for item in json_obj]
+            self.wav_paths = [item["audio"] for item in json_obj]
         else:
             self.num_captions_per_audio = 5
             self.captions = []

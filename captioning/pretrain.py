@@ -10,7 +10,7 @@ from pprint import PrettyPrinter
 import torch
 import wandb
 from loguru import logger
-from ruamel import yaml
+import ruamel
 from tqdm import tqdm
 from data_handling.datamodule import AudioCaptionDataModule
 from data_handling.pretrain_dataset import pretrain_dataloader
@@ -18,7 +18,11 @@ from eval_metrics import evaluate_metrics
 from models.bart_captioning import BartCaptionModel
 from models.bert_captioning import BertCaptionModel
 from tools.optim_utils import get_optimizer, cosine_lr
-from tools.utils import setup_seed, set_logger, AverageMeter, decode_output
+from tools.utils import setup_seed, set_logger, AverageMeter, decode_output, decode_output_coco
+from aac_metrics import Evaluate
+from aac_metrics.functional import fense
+from aac_metrics.utils.tokenization import preprocess_mono_sents, preprocess_mult_sents
+
 
 
 def train(model, dataloader, optimizer, scheduler, device, epoch, clip_grad=0):
@@ -26,7 +30,7 @@ def train(model, dataloader, optimizer, scheduler, device, epoch, clip_grad=0):
 
     epoch_loss = AverageMeter()
     start_time = time.time()
-
+    
     for batch_id, (audio, text, audio_names, _) in tqdm(enumerate(dataloader), total=len(dataloader)):
         optimizer.zero_grad()
 
@@ -81,20 +85,48 @@ def validate(data_loader, model, device, log_dir, epoch, beam_size):
 
         captions_pred, captions_gt = decode_output(y_hat_all, ref_captions_dict, file_names_all,
                                                    log_dir, epoch, beam_size=beam_size)
-        metrics = evaluate_metrics(captions_pred, captions_gt)
+        
+        #metrics = evaluate_metrics(captions_pred, captions_gt)
+        if beam_size == 3 and (epoch % 5) == 0:
+            evaluate = Evaluate(metrics=["bleu_1", "bleu_2","bleu_3","bleu_4","meteor","rouge_l","cider_d","spice","spider", "fense", "vocab"])
+            metrics, _ = evaluate(captions_pred, captions_gt)
+        #spider = metrics['spider']['score']
+        #cider = metrics['cider']['score']
+        else:
+            candidates = preprocess_mono_sents(captions_pred)
+            mult_references = preprocess_mult_sents(captions_gt)
 
-        spider = metrics['spider']['score']
-        cider = metrics['cider']['score']
+            metrics, _ = fense(candidates, mult_references)
+        fense_score = metrics['fense']
+        # spider = metrics['spider']
+        # cider = metrics['cider_d']
 
         eval_time = time.time() - start_time
 
-        val_logger.info(f'Cider: {cider:7.4f}')
+        #val_logger.info(f'Cider: {cider:7.4f}')
         val_logger.info(
-            f'Spider score using beam search (beam size:{beam_size}): {spider:7.4f}, eval time: {eval_time:.1f}')
+            f'FENSE score using beam search (beam size:{beam_size}): {fense_score:7.4f}, eval time: {eval_time:.1f}')
 
         if beam_size == 3 and (epoch % 5) == 0:
             for metric, values in metrics.items():
-                val_logger.info(f'beam search (size 3): {metric:<7s}: {values["score"]:7.4f}')
+                val_logger.info(f'beam search (size 3): {metric:<7s}: {values:7.4f}')
+                
+            captions_pred, captions_gt = decode_output_coco(y_hat_all, ref_captions_dict, file_names_all,
+                                                       log_dir, epoch, beam_size=beam_size)
+            coco_metrics = evaluate_metrics(captions_pred, captions_gt)
+    
+            spider = coco_metrics['spider']['score']
+            cider = coco_metrics['cider']['score']
+    
+            eval_time = time.time() - start_time
+    
+            val_logger.info(f'COCO - Cider: {cider:7.4f}')
+            val_logger.info(
+                f'COCO - Spider score using beam search (beam size:{beam_size}): {spider:7.4f}, eval time: {eval_time:.1f}')
+    
+            if beam_size == 3 and (epoch % 5) == 0:
+                for metric, values in coco_metrics.items():
+                    val_logger.info(f'COCO - beam search (size 3): {metric:<7s}: {values["score"]:7.4f}')
 
         return metrics
 
@@ -106,7 +138,7 @@ def main():
                         help="Setting files")
     parser.add_argument("-n", "--exp_name", default="exp_name", type=str,
                         help="name of this experiment.")
-    parser.add_argument('-l', '--lr', default=1e-05, type=float,
+    parser.add_argument('-l', '--lr', default=5e-05, type=float,
                         help='Learning rate.')
     parser.add_argument('-s', '--seed', default=20, type=int,
                         help='Training seed.')
@@ -115,7 +147,8 @@ def main():
     exp_name = args.exp_name
 
     with open(args.config, "r") as f:
-        config = yaml.safe_load(f)
+        yaml = ruamel.yaml.YAML(typ='safe', pure=True)
+        config = yaml.load(f)
 
     config["exp_name"] = args.exp_name
     config["seed"] = args.seed
@@ -125,7 +158,14 @@ def main():
 
     device = torch.device(config["device"])
 
-    exp_name = exp_name + f"lr_{config['optim_args']['lr']}_seed_{seed}"
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA version: {torch.version.cuda}")
+        print(f"Number of GPUs: {torch.cuda.device_count()}")
+        print(f"GPU Name: {torch.cuda.get_device_name(0)}")
+        print(f"Current Device: {torch.cuda.current_device()}")
+
+    exp_name = exp_name + f"run2_lr_{config['optim_args']['lr']}_seed_{seed}"
 
     wandb.init(
         project="audio-captioning",
@@ -150,7 +190,7 @@ def main():
     main_logger.info(f"Decoder model:{config['text_decoder_args']['name']}")
     model = model.to(device)
     wandb.watch(model)
-
+    #pretrain_checkpoint = torch.load(config["pretrain_path"])
     # setup optim utils
     optimizer = get_optimizer(model.parameters(),
                               lr=config["optim_args"]["lr"],
@@ -159,16 +199,18 @@ def main():
                               momentum=config["optim_args"]["momentum"],
                               weight_decay=config["optim_args"]["weight_decay"],
                               optimizer_name=config["optim_args"]["optimizer_name"])
+    # optimizer.load_state_dict(pretrain_checkpoint["optimizer"])
+    # main_logger.info(f"Loaded optimizer from {config['pretrain_path']}")
     if config["optim_args"]["scheduler"] == "cosine":
         scheduler = cosine_lr(optimizer,
                               base_lr=config["optim_args"]["lr"],
-                              warmup_length=config["optim_args"]["warmup_epochs"] * len(train_loader),
-                              steps=len(train_loader) * config["training"]["epochs"])
+                              warmup_length=config["optim_args"]["warmup_epochs"] * len(dataloader),
+                              steps=len(dataloader) * config["training"]["epochs"])
     elif config["optim_args"]["scheduler"] == "step":
         scheduler = step_lr(optimizer,
                             base_lr=config["optim_args"]["lr"],
-                            warmup_length=config["optim_args"]["warmup_epochs"] * len(train_loader),
-                            adjust_steps=config["optim_args"]["step_epochs"] * len(train_loader),
+                            warmup_length=config["optim_args"]["warmup_epochs"] * len(dataloader),
+                            adjust_steps=config["optim_args"]["step_epochs"] * len(dataloader),
                             gamma=config["optim_args"]["gamma"])
     elif config["optim_args"]["scheduler"] == "old":
         scheduler = None
@@ -177,6 +219,12 @@ def main():
 
     start_epoch = 1
     max_epoch = config["training"]["epochs"]
+
+    # #load checkpoints
+    # pretrain_checkpoint = torch.load(config["pretrain_path"])
+    # model.load_state_dict(pretrain_checkpoint["model"])
+    # main_logger.info(f"Loaded weights from {config['pretrain_path']}")
+
 
     # print training settings
     printer = PrettyPrinter()
@@ -190,12 +238,17 @@ def main():
     ac_datamodule = AudioCaptionDataModule(config, "AudioCaps")
     clotho_datamodule = AudioCaptionDataModule(config, "Clotho")
 
+
     ac_val_loader = ac_datamodule.val_dataloader()
     clotho_val_loader = clotho_datamodule.val_dataloader()
 
+
     loss_stats = []
-    ac_spiders = []
-    clotho_spiders = []
+    # ac_spiders = []
+    # clotho_spiders = []
+
+    ac_fenses = []
+    clotho_fenses = []
 
     for epoch in range(start_epoch, max_epoch + 1):
         main_logger.info(f'Training for epoch [{epoch}]')
@@ -218,10 +271,13 @@ def main():
                                   log_dir=log_output_dir,
                                   epoch=epoch,
                                   beam_size=i)
-            spider = ac_metrics["spider"]["score"]
+            #spider = ac_metrics["spider"]
+            fense_score = ac_metrics["fense"]
             if i != 1:
-                ac_spiders.append(spider)
-                if spider >= max(ac_spiders):
+                #ac_spiders.append(spider)
+                ac_fenses.append(fense_score)
+                if fense_score >= max(ac_fenses):
+                #if spider >= max(ac_spiders):
                     torch.save({
                         "model": model.state_dict(),
                         "optimizer": optimizer.state_dict(),
@@ -230,7 +286,7 @@ def main():
                         "config": config,
                     }, str(model_output_dir) + '/ac_best_model.pt')
 
-            # evaluate on Clotho
+        # evaluate on Clotho
         main_logger.info('Evaluating on Clotho...')
         for i in range(1, 4):
             clotho_metrics = validate(clotho_val_loader,
@@ -239,10 +295,13 @@ def main():
                                       log_dir=log_output_dir,
                                       epoch=epoch,
                                       beam_size=i)
-            spider = clotho_metrics["spider"]["score"]
+            #spider = clotho_metrics["spider"]
+            fense_score = clotho_metrics["fense"]
             if i != 1:
-                clotho_spiders.append(spider)
-                if spider >= max(clotho_spiders):
+                #clotho_spiders.append(spider)
+                clotho_fenses.append(fense_score)
+                if fense_score >= max(clotho_fenses):
+                #if spider >= max(clotho_spiders):
                     torch.save({
                         "model": model.state_dict(),
                         "optimizer": optimizer.state_dict(),
@@ -256,47 +315,53 @@ def main():
     ac_test_loader = ac_datamodule.test_dataloader()
     clotho_test_loader = clotho_datamodule.test_dataloader()
 
+    #pretrain_dir = config["pretrain_dir"]
+
     model.load_state_dict(torch.load(str(model_output_dir) + "/ac_best_model.pt")["model"])
     main_logger.info(
         f"Evaluation best AudioCaps model... epoch:{torch.load(str(model_output_dir) + '/ac_best_model.pt')['epoch']}")
     for i in range(1, 4):
-        spider = validate(ac_test_loader, model,
+        ac_metrics = validate(ac_test_loader, model,
                           device=device,
                           log_dir=log_output_dir,
                           epoch=0,
                           beam_size=i,
-                          )['spider']['score']
-        wandb.log({f"AudioCaps/ac_model/spider(beam: {i})": spider})
+                          )
+        fense_score = ac_metrics["fense"]
+        wandb.log({f"AudioCaps/ac_model/fense(beam: {i})": fense_score})
 
     for i in range(1, 4):
-        spider = validate(clotho_test_loader, model,
+        clotho_metrics = validate(clotho_test_loader, model,
                           device=device,
                           log_dir=log_output_dir,
                           epoch=0,
                           beam_size=i,
-                          )['spider']['score']
-        wandb.log({f"Clotho/ac_model/spider(beam: {i})": spider})
+                          )
+        fense_score = clotho_metrics["fense"]
+        wandb.log({f"Clotho/ac_model/fense(beam: {i})": fense_score})
 
     model.load_state_dict(torch.load(str(model_output_dir) + "/clotho_best_model.pt")["model"])
     main_logger.info(
         f"Evaluation best Clotho model... epoch:{torch.load(str(model_output_dir) + '/clotho_best_model.pt')['epoch']}")
     for i in range(1, 4):
-        spider = validate(ac_test_loader, model,
+        ac_metrics = validate(ac_test_loader, model,
                           device=device,
                           log_dir=log_output_dir,
                           epoch=0,
                           beam_size=i,
-                          )['spider']['score']
-        wandb.log({f"AudioCaps/clotho_model/spider(beam: {i})": spider})
+                          )
+        fense_score = ac_metrics["fense"]
+        wandb.log({f"AudioCaps/ac_model/fense(beam: {i})": fense_score})
 
     for i in range(1, 4):
-        spider = validate(clotho_test_loader, model,
+        clotho_metrics = validate(clotho_test_loader, model,
                           device=device,
                           log_dir=log_output_dir,
                           epoch=0,
                           beam_size=i,
-                          )['spider']['score']
-        wandb.log({f"Clotho/clotho_model/spider(beam: {i})": spider})
+                          )
+        fense_score = clotho_metrics["fense"]
+        wandb.log({f"Clotho/ac_model/fense(beam: {i})": fense_score})
     main_logger.info('Evaluation done.')
     wandb.finish()
 

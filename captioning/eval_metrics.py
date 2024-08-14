@@ -133,8 +133,8 @@ def evaluate_metrics_from_lists(predictions: List[str],
     :return: Tuple with metrics for the whole dataset and per-file metrics
     :rtype: tuple[dict[str, float], dict[int, dict[str, float]]]
     """
-    assert(len(predictions) == len(ground_truths))
-    assert(all([len(i) == 5 for i in ground_truths]))
+    #assert(len(predictions) == len(ground_truths))
+    #assert(all([len(i) == 5 for i in ground_truths]))
 
     # Running int for id if not given
     if ids is None:
@@ -286,8 +286,9 @@ def evaluate_metrics(prediction_file: Union[str, Path, List[Dict[str, str]]],
         file_name = row['file_name']
         predictions.append(row['caption_predicted'])
 
-        cap_names = ['caption_{:1d}'.format(i) for i in range(1, nb_reference_captions+1)]
-
+        #cap_names = ['caption_{:1d}'.format(i) for i in range(1, nb_reference_captions+1)]
+        cap_names = ['caption_{:1d}'.format(i) for i in range(1, len(reference_dict[file_name]))]
+        #print(f"reference_dict[filename]:{reference_dict[file_name]}")
         ground_truths.append([reference_dict[file_name][cap] for cap in cap_names])
 
     metrics, per_file_metrics = evaluate_metrics_from_lists(predictions, ground_truths)

@@ -50,9 +50,10 @@ class BySequenceLengthSampler(Sampler):
                 iter_list += (np.split(data_buckets[k], int(data_buckets[k].shape[0] / self.batch_size)))
             else:
                 drop_num = len(data_buckets[k]) % self.batch_size
-                iter_list += (np.array_split(data_buckets[k][:-drop_num]
+                if len(data_buckets[k][:-drop_num]) > 0:
+                    iter_list += (np.array_split(data_buckets[k][:-drop_num]
                                                  , int(data_buckets[k][:-drop_num].shape[0] / self.batch_size)))
-                if not self.drop_last:
+                if not self.drop_last and drop_num > 0:
                     iter_list += data_buckets[k][-drop_num:]
         self.random_state.shuffle(iter_list)  # shuffle all the batches so they arent ordered by bucket
         # size
