@@ -286,8 +286,8 @@ def evaluate_metrics(prediction_file: Union[str, Path, List[Dict[str, str]]],
         file_name = row['file_name']
         predictions.append(row['caption_predicted'])
 
-        #cap_names = ['caption_{:1d}'.format(i) for i in range(1, nb_reference_captions+1)]
-        cap_names = ['caption_{:1d}'.format(i) for i in range(1, len(reference_dict[file_name]))]
+        cap_names = ['caption_{:1d}'.format(i) for i in range(1, nb_reference_captions+1)]
+        #cap_names = ['caption_{:1d}'.format(i) for i in range(1, len(reference_dict[file_name]))]
         #print(f"reference_dict[filename]:{reference_dict[file_name]}")
         ground_truths.append([reference_dict[file_name][cap] for cap in cap_names])
 

@@ -165,7 +165,7 @@ def main():
         print(f"GPU Name: {torch.cuda.get_device_name(0)}")
         print(f"Current Device: {torch.cuda.current_device()}")
 
-    exp_name = exp_name + f"run2_lr_{config['optim_args']['lr']}_seed_{seed}"
+    exp_name = exp_name + f"_run3_lr_{config['optim_args']['lr']}_seed_{seed}"
 
     wandb.init(
         project="audio-captioning",

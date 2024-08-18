@@ -18,7 +18,7 @@ from eval_metrics import evaluate_metrics
 from models.bart_captioning import BartCaptionModel
 from models.bert_captioning import BertCaptionModel
 from tools.optim_utils import get_optimizer, cosine_lr
-from tools.utils import setup_seed, set_logger, AverageMeter, decode_output
+from tools.utils import setup_seed, set_logger, AverageMeter, decode_output, decode_output_coco
 from aac_metrics import Evaluate
 from aac_metrics.functional import fense
 from aac_metrics.utils.tokenization import preprocess_mono_sents, preprocess_mult_sents
@@ -110,6 +110,23 @@ def validate(data_loader, model, device, log_dir, epoch, beam_size):
         if beam_size == 3 and (epoch % 5) == 0:
             for metric, values in metrics.items():
                 val_logger.info(f'beam search (size 3): {metric:<7s}: {values:7.4f}')
+                
+            captions_pred, captions_gt = decode_output_coco(y_hat_all, ref_captions_dict, file_names_all,
+                                                       log_dir, epoch, beam_size=beam_size)
+            coco_metrics = evaluate_metrics(captions_pred, captions_gt)
+    
+            spider = coco_metrics['spider']['score']
+            cider = coco_metrics['cider']['score']
+    
+            eval_time = time.time() - start_time
+    
+            val_logger.info(f'COCO - Cider: {cider:7.4f}')
+            val_logger.info(
+                f'COCO - Spider score using beam search (beam size:{beam_size}): {spider:7.4f}, eval time: {eval_time:.1f}')
+    
+            if beam_size == 3 and (epoch % 5) == 0:
+                for metric, values in coco_metrics.items():
+                    val_logger.info(f'COCO - beam search (size 3): {metric:<7s}: {values["score"]:7.4f}')
 
         return metrics
 
@@ -148,7 +165,7 @@ def main():
         print(f"GPU Name: {torch.cuda.get_device_name(0)}")
         print(f"Current Device: {torch.cuda.current_device()}")
 
-    exp_name = exp_name + f"fine_tune_lr_{config['optim_args']['lr']}_seed_{seed}"
+    exp_name = exp_name + f"_fine_tune_run2_lr_{config['optim_args']['lr']}_seed_{seed}"
 
     wandb.init(
         project="audio-captioning",
