@@ -174,7 +174,7 @@ def decode_output_coco(predicted_output, ref_captions, file_names,
         captions_pred.append({'file_name': f_name, 'caption_predicted': pred_cap})
         ref_caps_dict = {'file_name': f_name}
         log_strings = ""
-        print(gt_caps)
+        #print(gt_caps)
         if isinstance(gt_caps, list):
             for i, cap in enumerate(gt_caps):
                 ref_caps_dict[f"caption_{i + 1}"] = cap
